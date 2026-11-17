@@ -137,7 +137,7 @@ export default function Widget() {
             {micEnabled ? micStatus || "listening" : "tap mic to wake"}
           </div>
           <div className="text-[13px] text-jarvis-ice/90 truncate">
-            {lastReply ? lastReply.text.split(/[.!?\n]/)[0].slice(0, 60) || "standing by" : "standing by, sir."}
+            {lastReply ? lastReply.text.split(/[.!?\n]/)[0].slice(0, 60) || "a la espera" : "a la espera, señor."}
           </div>
         </div>
       </div>
@@ -193,7 +193,7 @@ export default function Widget() {
               }
             }}
             rows={1}
-            placeholder="Ask JARVIS…"
+            placeholder="Pregunte a JARVIS…"
             className="flex-1 bg-transparent resize-none outline-none text-[14px] leading-snug py-2 text-jarvis-ice placeholder:text-jarvis-cyan/30"
           />
           <button

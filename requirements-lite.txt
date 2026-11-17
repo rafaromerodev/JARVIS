@@ -1,0 +1,30 @@
+# Versión ligera para equipos sin GPU NVIDIA (sin PyTorch ni generación de imágenes/3D).
+# Core
+fastapi>=0.110.0
+python-multipart>=0.0.9
+uvicorn[standard]>=0.27.0
+websockets>=12.0
+httpx>=0.25.0
+trafilatura>=2.0.0
+pydantic>=2.5.0
+pyyaml>=6.0.1
+psutil>=5.9.0
+python-dotenv>=1.0.0
+rich>=13.7.0
+numpy
+
+# Voz
+edge-tts>=6.1.12
+faster-whisper>=1.0.0
+av<16                             # faster-whisper 1.2.1 usa av.open(metadata_errors=...), eliminado en av 16+
+SpeechRecognition>=3.10.0
+pyttsx3>=2.90
+
+# Visión
+opencv-python>=4.9.0
+mss>=9.0.1
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
+# Navegador
+playwright>=1.40.0

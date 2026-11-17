@@ -1,10 +1,10 @@
 import { useStore } from "../../lib/store";
 
 const STATE_LABELS: Record<string, { label: string; color: string; dot: string }> = {
-  idle:      { label: "STANDBY",    color: "text-jarvis-cyan",  dot: "bg-jarvis-cyan"  },
-  listening: { label: "LISTENING",  color: "text-jarvis-aqua",  dot: "bg-jarvis-aqua"  },
-  thinking:  { label: "ANALYSING",  color: "text-jarvis-violet",dot: "bg-jarvis-violet"},
-  speaking:  { label: "RESPONDING", color: "text-jarvis-aqua",  dot: "bg-jarvis-aqua"  },
+  idle:      { label: "EN ESPERA",   color: "text-jarvis-cyan",  dot: "bg-jarvis-cyan"  },
+  listening: { label: "ESCUCHANDO",  color: "text-jarvis-aqua",  dot: "bg-jarvis-aqua"  },
+  thinking:  { label: "ANALIZANDO",  color: "text-jarvis-violet",dot: "bg-jarvis-violet"},
+  speaking:  { label: "RESPONDIENDO",color: "text-jarvis-aqua",  dot: "bg-jarvis-aqua"  },
 };
 
 export default function StatusBar() {
@@ -34,9 +34,9 @@ export default function StatusBar() {
             </span>
             <span className="tracking-[0.3em] glow-text">{info.label}</span>
           </span>
-          <Pip label="NET"   value={connected ? "secure" : "down"} valueClass={connected ? "text-jarvis-ok" : "text-jarvis-danger"} />
-          <Pip label="TASKS" value={String(running)} />
-          <Pip label="VOICE" value={voiceLabel || "calibrating"} />
+          <Pip label="RED"    value={connected ? "segura" : "caída"} valueClass={connected ? "text-jarvis-ok" : "text-jarvis-danger"} />
+          <Pip label="TAREAS" value={String(running)} />
+          <Pip label="VOZ"    value={voiceLabel || "calibrando"} />
         </div>
         <div className="flex items-center gap-2 w-56 pointer-events-auto">
           <span className="text-jarvis-ice/35 tracking-[0.25em]">AUD</span>
