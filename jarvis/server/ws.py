@@ -44,6 +44,15 @@ HELP_TEXT = (
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:
+    # SEGURIDAD: un navegador siempre envía la cabecera Origin en el handshake.
+    # Si viene de una web que no es la propia UI de JARVIS, se rechaza; así
+    # una página maliciosa no puede enviar órdenes a ws://127.0.0.1:7341/ws.
+    from .app import ALLOWED_ORIGINS
+    origin = ws.headers.get("origin")
+    if origin is not None and origin not in ALLOWED_ORIGINS:
+        log.warning("ws rechazado: origen no autorizado %s", origin)
+        await ws.close(code=1008)
+        return
     # Guard accept — if the browser dropped before the handshake finished,
     # `accept()` raises immediately. Without this guard the receive loop
     # below would crash with "WebSocket is not connected. Need to call
