@@ -22,6 +22,7 @@ from starlette.websockets import WebSocketState
 
 from ..core.events import Event, EventKind
 from ..core.orchestrator import UNINTERRUPTIBLE_TOOLS
+from .origins import is_allowed_origin
 
 log = logging.getLogger("jarvis.ws")
 
@@ -44,6 +45,13 @@ HELP_TEXT = (
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:
+    # Browsers always send Origin on the handshake. Reject pages from other
+    # sites so they can't open ws://127.0.0.1:<port>/ws and issue commands.
+    origin = ws.headers.get("origin")
+    if not is_allowed_origin(origin):
+        log.warning("ws rejected: origin not allowed: %s", origin)
+        await ws.close(code=1008)
+        return
     # Guard accept — if the browser dropped before the handshake finished,
     # `accept()` raises immediately. Without this guard the receive loop
     # below would crash with "WebSocket is not connected. Need to call

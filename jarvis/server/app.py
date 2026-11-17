@@ -32,6 +32,7 @@ from ..core.memory import Memory
 from ..core.orchestrator import Orchestrator
 from ..plugins.registry import PluginRegistry
 from . import routes, ws
+from .origins import LOOPBACK_ORIGIN_REGEX, is_allowed_origin
 
 log = logging.getLogger("jarvis.server")
 
@@ -125,9 +126,17 @@ def create_app(
         await orchestrator.brain.aclose()
 
     app = FastAPI(title="JARVIS", version="0.2.0", lifespan=lifespan)
+    # Only pages served from loopback may call the API from a browser.
+    # See origins.py for why CORS alone is not sufficient.
+    @app.middleware("http")
+    async def _reject_foreign_origins(request, call_next):
+        if not is_allowed_origin(request.headers.get("origin")):
+            return JSONResponse({"error": "origin not allowed"}, status_code=403)
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origin_regex=LOOPBACK_ORIGIN_REGEX,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
