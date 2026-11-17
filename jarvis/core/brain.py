@@ -26,6 +26,20 @@ from ..config import Config
 log = logging.getLogger("jarvis.brain")
 
 
+def _add_penalties(payload: dict, mc) -> None:
+    """Add frequency/presence_penalty only when the provider accepts them.
+
+    Google's OpenAI-compatible Gemini endpoint rejects the whole request
+    (HTTP 400 "Unknown name frequency_penalty") when these fields are present.
+    """
+    if "generativelanguage.googleapis.com" in (mc.endpoint or ""):
+        return
+    if mc.frequency_penalty:
+        payload["frequency_penalty"] = mc.frequency_penalty
+    if mc.presence_penalty:
+        payload["presence_penalty"] = mc.presence_penalty
+
+
 TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
 XML_TOOL_RE = re.compile(
     r"<(?P<name>[a-zA-Z_][\w-]*)>\s*(?P<body>.*?)\s*</(?P=name)>",
@@ -40,6 +54,10 @@ class ToolCall:
     args: dict[str, Any]
     raw: str = ""              # original text (for logging)
     call_id: str | None = None # provider id when native
+    # Provider-specific data that must be sent back verbatim in the history.
+    # Gemini 3 puts its "thought_signature" here and rejects (HTTP 400) the
+    # next request if the tool call comes back without it.
+    extra: dict[str, Any] | None = None
 
 
 @dataclass
@@ -139,9 +157,8 @@ class LLMBrain:
             "temperature": self.mc.temperature,
             "max_tokens": self.mc.max_tokens,
             "stream": False,
-            "frequency_penalty": self.mc.frequency_penalty,
-            "presence_penalty":  self.mc.presence_penalty,
         }
+        _add_penalties(payload, self.mc)
         if self.mc.reasoning_effort not in (None, "none", ""):
             payload["reasoning_effort"] = self.mc.reasoning_effort
         if self.mc.native_tool_calls and tool_schemas:
@@ -181,6 +198,7 @@ class LLMBrain:
                     args=args,
                     raw=json.dumps(fn),
                     call_id=tc.get("id"),
+                    extra=tc.get("extra_content") or None,
                 )
             )
 
@@ -213,9 +231,8 @@ class LLMBrain:
             "temperature": self.mc.temperature,
             "max_tokens": self.mc.max_tokens,
             "stream": True,
-            "frequency_penalty": self.mc.frequency_penalty,
-            "presence_penalty":  self.mc.presence_penalty,
         }
+        _add_penalties(payload, self.mc)
         if self.mc.reasoning_effort not in (None, "none", ""):
             payload["reasoning_effort"] = self.mc.reasoning_effort
         if self.mc.native_tool_calls and tool_schemas:
@@ -270,9 +287,11 @@ class LLMBrain:
                     # Tool call deltas
                     for tc in delta.get("tool_calls") or []:
                         idx = tc.get("index", 0)
-                        slot = tc_acc.setdefault(idx, {"id": "", "name": "", "args": ""})
+                        slot = tc_acc.setdefault(idx, {"id": "", "name": "", "args": "", "extra": None})
                         if tc.get("id"):
                             slot["id"] = tc["id"]
+                        if tc.get("extra_content"):
+                            slot["extra"] = tc["extra_content"]
                         fn = tc.get("function") or {}
                         if fn.get("name"):
                             slot["name"] = fn["name"]
@@ -302,6 +321,7 @@ class LLMBrain:
                 args=args,
                 raw=json.dumps(slot),
                 call_id=slot["id"] or None,
+                extra=slot.get("extra") or None,
             ))
 
         # ReAct fallback if no native tool calls came through
