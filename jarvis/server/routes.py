@@ -206,7 +206,7 @@ async def speech_to_text(audio: UploadFile = File(...)):
     #   * initial_prompt biases the LM away from the YouTube-style outro
     #     phrases and toward technical assistant vocabulary.
     _WHISPER_KW: dict = dict(
-        language="en",
+        language="es",
         beam_size=1,
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 400, "threshold": 0.45},
@@ -216,8 +216,8 @@ async def speech_to_text(audio: UploadFile = File(...)):
         compression_ratio_threshold=2.4,
         temperature=0.0,
         initial_prompt=(
-            "JARVIS command. Search, generate image, open page, run code, "
-            "show news, list videos, open the file."
+            "Oye JARVIS. Abre Visual Studio Code, busca en internet, abre la "
+            "carpeta de proyectos, ejecuta el comando, muestra las noticias."
         ),
     )
 
@@ -358,9 +358,7 @@ def _get_whisper_model():
 
     # Forced CPU mode (set after a runtime failure).
     if _whisper_device == "cpu":
-        _stt_log.info("Loading Whisper 'small' on CPU (int8)…")
-        _whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
-        _stt_log.info("Whisper small loaded on CPU.")
+        _whisper_model = _load_cpu_whisper()
         return _whisper_model
 
     # First-time load: probe CUDA runtime before touching the GPU model.
@@ -391,10 +389,20 @@ def _get_whisper_model():
         )
 
     _whisper_device = "cpu"
-    _stt_log.info("Loading Whisper 'small' on CPU (int8)…")
-    _whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
-    _stt_log.info("Whisper small loaded on CPU.")
+    _whisper_model = _load_cpu_whisper()
     return _whisper_model
+
+
+def _load_cpu_whisper():
+    """Whisper en CPU. Por defecto 'base' (~1,3 s por frase en un i5 de 4 núcleos,
+    frente a ~4,5 s de 'small'). Se puede cambiar con JARVIS_WHISPER_MODEL en .env."""
+    from faster_whisper import WhisperModel
+    name = os.environ.get("JARVIS_WHISPER_MODEL", "").strip() or "base"
+    threads = os.cpu_count() or 4
+    _stt_log.info("Loading Whisper '%s' on CPU (int8, %d threads)…", name, threads)
+    model = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=threads)
+    _stt_log.info("Whisper %s loaded on CPU.", name)
+    return model
 
 
 def _services(req: Request):
@@ -772,15 +780,17 @@ async def tts_status(request: Request):
     riva_ready = _riva_enabled(cfg) and riva_client_available
     piper_ready = _piper_available(cfg)
 
-    if piper_ready:
+    if _elevenlabs_configured():
+        provider, label, voice, lang = "elevenlabs", "ElevenLabs (voz personalizada)", os.environ.get("ELEVENLABS_VOICE_ID", ""), "es-ES"
+    elif piper_ready:
         provider, label, voice, lang = "piper", "JARVIS (Piper, community model)", "jarvis", "en-GB"
     elif riva_ready:
         provider, label, voice, lang = "nvidia-riva", "NVIDIA Riva / Jarvis TTS", cfg.voice.riva_voice, cfg.voice.riva_language_code
     else:
         provider = "edge-tts"
-        label = "Microsoft Ryan Neural (British male)"
+        label = f"Microsoft {cfg.voice.edge_voice}"
         voice = cfg.voice.edge_voice
-        lang = "en-GB"
+        lang = "-".join(voice.split("-")[:2]) if voice else "es-ES"
 
     return {
         "available": edge_available or riva_ready or piper_ready,
@@ -836,6 +846,15 @@ async def tts(request: Request, body: TTSBody):
     text = text[:1800]
     tts_log = logging.getLogger("jarvis.tts")
 
+    # 0. ElevenLabs (voz diseñada en ElevenLabs; requiere ELEVENLABS_API_KEY y
+    #    ELEVENLABS_VOICE_ID en .env). Si falla, se usan los motores siguientes.
+    if _elevenlabs_configured():
+        try:
+            audio = await _synthesize_with_elevenlabs(text)
+            return Response(audio, media_type="audio/mpeg", headers={"X-JARVIS-TTS": "elevenlabs"})
+        except Exception as e:  # noqa: BLE001
+            tts_log.warning("ElevenLabs TTS failed (%s) — falling back", e)
+
     # 1. Piper — community JARVIS model (closest to MCU voice).
     if _should_try_piper(cfg):
         try:
@@ -875,6 +894,34 @@ async def tts(request: Request, body: TTSBody):
         media_type="audio/mpeg",
         headers={"X-JARVIS-TTS": "edge"},
     )
+
+
+# --- ElevenLabs TTS (nube, voz diseñada por el usuario) ---------------------
+ELEVENLABS_MODEL_DEFAULT = "eleven_multilingual_v2"
+
+
+def _elevenlabs_configured() -> bool:
+    return bool(os.environ.get("ELEVENLABS_API_KEY", "").strip()
+                and os.environ.get("ELEVENLABS_VOICE_ID", "").strip())
+
+
+async def _synthesize_with_elevenlabs(text: str) -> bytes:
+    api_key = os.environ["ELEVENLABS_API_KEY"].strip()
+    voice_id = os.environ["ELEVENLABS_VOICE_ID"].strip()
+    model_id = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVENLABS_MODEL_DEFAULT
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": {"stability": 0.55, "similarity_boost": 0.8, "style": 0.2},
+    }
+    headers = {"xi-api-key": api_key, "accept": "audio/mpeg", "content-type": "application/json"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, json=payload, headers=headers,
+                                 params={"output_format": "mp3_44100_128"})
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    return resp.content
 
 
 # --- Piper TTS (local, closest match to MCU JARVIS) ------------------------

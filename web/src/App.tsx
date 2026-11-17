@@ -31,7 +31,7 @@ const Lightbox      = lazy(() => import("./components/Media/Lightbox"));
 const ArticleReader = lazy(() => import("./components/Media/ArticleReader"));
 import { getHealth } from "./lib/api";
 import { useStore, nextId, type MediaKind } from "./lib/store";
-import { refreshVoiceProfile, streamSpeak } from "./lib/voice";
+import { cancelStreamingTts, refreshVoiceProfile, streamSpeak } from "./lib/voice";
 import { wsClient } from "./lib/ws";
 
 const GREETING_SESSION_KEY = "jarvis.greeting.sent.v1";
@@ -83,6 +83,24 @@ function useViewport() {
     w: typeof window !== "undefined" ? window.innerWidth : 1200,
     h: typeof window !== "undefined" ? window.innerHeight : 800,
   }));
+
+  // Interrupción: al hablar encima de JARVIS (evento de voice.ts) o al pulsar
+  // Esc, se corta la voz y se cancela la tarea que esté ejecutando el backend.
+  useEffect(() => {
+    const interrupt = () => {
+      cancelStreamingTts();
+      wsClient.cancel();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") interrupt();
+    };
+    window.addEventListener("jarvis:interrupt", interrupt);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("jarvis:interrupt", interrupt);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   useEffect(() => {
     let raf = 0;
@@ -182,8 +200,8 @@ export default function App() {
     if (!booted || greetedRef.current) return;
     greetedRef.current = true;
     const h = new Date().getHours();
-    const part = h < 12 ? "morning" : h < 18 ? "afternoon" : "evening";
-    const text = `Good ${part}, sir. All systems are online and at your service.`;
+    const part = h >= 6 && h < 13 ? "Buenos días" : h >= 13 && h < 21 ? "Buenas tardes" : "Buenas noches";
+    const text = `${part}, señor. Todos los sistemas están operativos y a su servicio.`;
     try {
       if (sessionStorage.getItem(GREETING_SESSION_KEY) === "1") return;
       sessionStorage.setItem(GREETING_SESSION_KEY, "1");

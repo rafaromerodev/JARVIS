@@ -15,6 +15,10 @@ function configuredWakeWord(): string {
 const SYNTH = typeof window !== "undefined" ? window.speechSynthesis : null;
 
 const JARVIS_VOICE_MATCHERS = [
+  /microsoft alvaro.*(?:online|natural)|alvaro.*(?:online|natural)/i,
+  /es-ES-Alvaro/i,
+  /microsoft pablo/i,
+  /google espa[ñn]ol/i,
   /microsoft ryan.*(?:online|natural)|ryan.*(?:online|natural)/i,
   /en-GB-Ryan/i,
   /microsoft george/i,
@@ -65,10 +69,10 @@ function voiceScore(voice: SpeechSynthesisVoice): number {
   const label = `${voice.name} ${voice.lang}`;
   const matcherIndex = JARVIS_VOICE_MATCHERS.findIndex((re) => re.test(label));
   let score = matcherIndex >= 0 ? 120 - matcherIndex * 10 : 0;
-  if (/en-GB/i.test(label)) score += 35;
+  if (/es-ES/i.test(label)) score += 35;
   if (/(?:natural|online|neural)/i.test(label)) score += 25;
   if (LOWER_CONFIDENCE_VOICES.test(label)) score -= 20;
-  if (/^en/i.test(voice.lang)) score += 5;
+  if (/^es/i.test(voice.lang)) score += 5;
   return score;
 }
 
@@ -97,8 +101,8 @@ function pickVoice(): SpeechSynthesisVoice | null {
   const voices = SYNTH.getVoices();
   const ranked = [...voices].sort((a, b) => voiceScore(b) - voiceScore(a));
   const prefer = ranked.find((v) => voiceScore(v) > 0)
-              || voices.find((v) => v.lang === "en-GB")
-              || voices.find((v) => v.lang.startsWith("en"))
+              || voices.find((v) => v.lang === "es-ES")
+              || voices.find((v) => v.lang.startsWith("es"))
               || voices[0]
               || null;
   cachedVoice = prefer ?? null;
@@ -452,7 +456,7 @@ function speakWithBrowserTts(clean: string): void {
   const u = new SpeechSynthesisUtterance(clean);
   const v = pickVoice();
   if (v) u.voice = v;
-  u.lang = v?.lang || "en-GB";
+  u.lang = v?.lang || "es-ES";
   u.rate = 0.94;
   u.pitch = 0.82;
   u.volume = 1.0;
@@ -501,7 +505,7 @@ const BARGE_IN_MULTIPLIER = 3.2;       // voice must exceed baseline * this
 const BARGE_IN_FLOOR      = 0.12;      // and clear this absolute level
 const BARGE_IN_SUSTAIN_MS = 220;       // for this long, continuously
 // Stop words that cut TTS when heard during a cancel-probe.
-const CANCEL_RE = /\b(?:cancel|nevermind|never\s*mind|shut\s*up|stop(?:\s+(?:talking|speaking))?|be\s+quiet|quiet|enough|hush)\b/i;
+const CANCEL_RE = /\b(?:cancel|nevermind|never\s*mind|shut\s*up|stop(?:\s+(?:talking|speaking))?|be\s+quiet|quiet|enough|hush)\b|^\s*(?:jarvis[\s,]*)?(?:para|parar|cancela|cancelar|c[aá]llate|calla|silencio|basta|vale\s+ya|d[eé]jalo)(?=[\s,.!?¡¿…]|$)/i;
 const CANCEL_PROBE_MS = 1600;          // how long to listen for the stop word
 
 // Whisper hallucinations to suppress (mirror of server filter).
@@ -510,13 +514,15 @@ const HALLUCINATION_RE = /^\s*(?:thanks?[\s,.!?]*(?:for\s+watching|for\s+listeni
 // In the armed follow-up window these would otherwise auto-submit as a chat
 // and cancel any in-flight task. Drop them — they carry no command.
 const FILLER_RE = /^\s*(?:oh+|uh+|um+|hmm+|hm|ah+|aha|eh+|mm+|er+|huh|ugh|oof|whoa|oops|mhm|uh[\s-]*huh|oh\s+my|yeah|yep|nope|hu)[\s,.!?…]*$/i;
-const FOLLOWUP_WAKE_MS  = 10_000;
-const FOLLOWUP_REPLY_MS = 20_000;
+// Ventanas de conversación (sin repetir "Oye JARVIS"). Ampliadas porque en CPU
+// Whisper tarda en transcribir y queremos una conversación fluida.
+const FOLLOWUP_WAKE_MS  = 30_000;
+const FOLLOWUP_REPLY_MS = 45_000;
 // VAD often chops one spoken sentence into 2+ STT clips on short pauses.
 // Buffer submissions this long and join consecutive clips into ONE chat, so a
 // mid-sentence pause doesn't fire twice (the 2nd request cancelling the 1st).
 const STT_COALESCE_MS = 800;
-const SLEEP_PHRASES = /\b(?:stop listening|go to sleep|jarvis stop|sleep mode|nevermind|never mind|that's all|that is all)\b/i;
+const SLEEP_PHRASES = /\b(?:stop listening|go to sleep|jarvis stop|sleep mode|nevermind|never mind|that's all|that is all|deja de escuchar|eso es todo|nada m[aá]s|du[eé]rmete|a dormir|modo reposo)(?=[\s,.!?¡¿…]|$)/i;
 
 export class JarvisMic {
   private analyser: AnalyserNode | null = null;
@@ -559,8 +565,8 @@ export class JarvisMic {
       useStore.getState().setMicMode("speaking");
       useStore.getState().setMicStatus(
         useStore.getState().bargeIn
-          ? "JARVIS speaking · say “cancel” to stop"
-          : "JARVIS speaking · mic muted",
+          ? "JARVIS hablando · hable para interrumpir (o pulse Esc)"
+          : "JARVIS hablando · micrófono en silencio (Esc para cortar)",
       );
     }
   }
@@ -578,6 +584,23 @@ export class JarvisMic {
       useStore.getState().setMicMode("armed");
       useStore.getState().setMicStatus(`armed · ${Math.round(FOLLOWUP_REPLY_MS/1000)}s to reply`);
     }
+  }
+
+  // El usuario habla mientras JARVIS habla: cortar la voz y la tarea en curso
+  // al instante y empezar a grabar lo que dice como una orden normal.
+  private _bargeIn() {
+    this._loudRunStart = 0;
+    console.log("[STT] barge-in: el usuario habla, JARVIS se calla");
+    if (this._probeTimer) { clearTimeout(this._probeTimer); this._probeTimer = null; }
+    cancelStreamingTts();
+    this._ttsActive = false;
+    this._awakeUntil = Date.now() + FOLLOWUP_REPLY_MS;
+    try { window.dispatchEvent(new CustomEvent("jarvis:interrupt")); } catch { /* noop */ }
+    if (this._wantListening) {
+      useStore.getState().setMicMode("armed");
+      useStore.getState().setMicStatus("interrumpido · le escucho, señor");
+    }
+    this._startRecording();   // captura normal (no es una sonda de "cancel")
   }
 
   // The user spoke up while JARVIS is talking. Start a brief recording that is
@@ -712,7 +735,9 @@ export class JarvisMic {
         this._loudRunStart = 0;
         if (lvl > voiceThr) {
           this.silenceStart = 0;
-          if (!this.isRecording && !this._transcribing) {
+          // Se puede grabar aunque haya una transcripción en curso: el clip
+          // nuevo espera su turno en _transcribe() en vez de perderse.
+          if (!this.isRecording) {
             this._startRecording();
           }
         } else if (this.isRecording) {
@@ -741,9 +766,11 @@ export class JarvisMic {
             this._loudRunStart = Date.now();
           } else if (
             Date.now() - this._loudRunStart > BARGE_IN_SUSTAIN_MS &&
-            !this.isRecording && !this._transcribing
+            !this.isRecording
           ) {
-            this._startCancelProbe();
+            // Interrupción real: si el usuario habla, JARVIS se calla y lo
+            // que diga se toma como la nueva orden.
+            this._bargeIn();
           }
         } else {
           this._loudRunStart = 0;
@@ -809,6 +836,15 @@ export class JarvisMic {
   }
 
   private async _transcribe(blob: Blob, isCancelProbe = false) {
+    // Momento en que terminaste de hablar: la ventana de conversación se mide
+    // desde aquí, no desde que Whisper acaba (en CPU puede tardar segundos).
+    const spokenAt = Date.now();
+    // Antes se descartaba el audio si había otra transcripción en curso.
+    // Ahora espera su turno (máx. 15 s) para no perder frases.
+    const waitStart = Date.now();
+    while (this._transcribing && Date.now() - waitStart < 15_000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     if (this._transcribing) return;
     this._transcribing = true;
     useStore.getState().setMicStatus(isCancelProbe ? "listening for “cancel”…" : "transcribing…");
@@ -867,7 +903,7 @@ export class JarvisMic {
         const now = Date.now();
         const wakeWord = configuredWakeWord();
         const hasWake = detectWake(text, wakeWord);
-        const inFollowup = now < this._awakeUntil;
+        const inFollowup = spokenAt < this._awakeUntil;
 
         if (!hasWake && !inFollowup) {
           // Ambient speech — drop. Brief visual feedback then back to dormant.
@@ -909,8 +945,8 @@ export class JarvisMic {
         if (this._ttsActive) {
           useStore.getState().setMicStatus(
             useStore.getState().bargeIn
-              ? "JARVIS speaking · say “cancel” to stop"
-              : "JARVIS speaking · mic muted",
+              ? "JARVIS hablando · hable para interrumpir (o pulse Esc)"
+              : "JARVIS hablando · micrófono en silencio (Esc para cortar)",
           );
         } else {
           useStore.getState().setMicStatus(`listening · say “${configuredWakeWord()}”`);

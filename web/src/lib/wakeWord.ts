@@ -37,8 +37,8 @@ function customWakePattern(value: string, leadingOnly = false): RegExp {
 //   2. Levenshtein distance ≤ 2 from "jarvis"
 //   3. starts with a soft "j/y/h/ch" cluster + jarvis-ish tail
 // Plus the canonical phrases (hey jarvis, ok jarvis, etc).
-const WAKE_SHAPE_RE = /\b(?:hey|ok|okay|yo|hi|ay)?\s*(?:[jyhc]h?|ch)[aeiouy]+r?[vb][aeiouy]+s+(?:es|is)?\b/i;
-const WAKE_STRICT_RE = /\b(?:hey|ok|okay|yo|hi|ay)?\s*j\.?a\.?r\.?v\.?i\.?s\.?\b/i;
+const WAKE_SHAPE_RE = /\b(?:hey|ok|okay|yo|hi|ay|oye|eh|hola|vale|venga)?\s*(?:[jyhc]h?|ch)[aeiouy]+r?[vb][aeiouy]+s+(?:es|is)?\b/i;
+const WAKE_STRICT_RE = /\b(?:hey|ok|okay|yo|hi|ay|oye|eh|hola|vale|venga)?\s*j\.?a\.?r\.?v\.?i\.?s\.?\b/i;
 
 function levenshtein(a: string, b: string): number {
   a = a.toLowerCase(); b = b.toLowerCase();
@@ -85,7 +85,7 @@ export function stripWakeWord(text: string, wakeWord = DEFAULT_WAKE_WORD): strin
     return text.replace(customWakePattern(wakeWord, true), "").trim();
   }
   // Strip strict match first
-  let out = text.replace(/^\s*(?:hey|ok|okay|yo|hi|ay)?\s*j\.?a\.?r\.?v\.?i\.?s\.?[\s,.\-:!?]*/i, "");
+  let out = text.replace(/^\s*(?:hey|ok|okay|yo|hi|ay|oye|eh|hola|vale|venga)?\s*j\.?a\.?r\.?v\.?i\.?s\.?[\s,.\-:!?]*/i, "");
   if (out !== text) return out.trim();
   // Strip fuzzy first-token if Jarvis-like
   const m = out.match(/^\s*(\S+)[\s,.\-:!?]*/);
@@ -93,12 +93,12 @@ export function stripWakeWord(text: string, wakeWord = DEFAULT_WAKE_WORD): strin
     out = out.slice(m[0].length);
     // Also peel a leading filler like "hey/ok"
     const m2 = out.match(/^\s*(\S+)[\s,.\-:!?]*/);
-    if (m2 && /^(?:hey|ok|okay|yo|hi|ay)$/i.test(m2[1])) {
+    if (m2 && /^(?:hey|ok|okay|yo|hi|ay|oye|eh|hola|vale|venga)$/i.test(m2[1])) {
       out = out.slice(m2[0].length);
     }
   } else {
     // Strip leading filler then fuzzy
-    const mf = out.match(/^\s*(hey|ok|okay|yo|hi|ay)\s+(\S+)[\s,.\-:!?]*/i);
+    const mf = out.match(/^\s*(hey|ok|okay|yo|hi|ay|oye|eh|hola|vale|venga)\s+(\S+)[\s,.\-:!?]*/i);
     if (mf && isJarvisLike(mf[2])) out = out.slice(mf[0].length);
   }
   return out.trim();
