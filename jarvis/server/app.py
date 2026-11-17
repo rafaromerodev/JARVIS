@@ -32,16 +32,9 @@ from ..core.memory import Memory
 from ..core.orchestrator import Orchestrator
 from ..plugins.registry import PluginRegistry
 from . import routes, ws
+from .origins import LOOPBACK_ORIGIN_REGEX, is_allowed_origin
 
 log = logging.getLogger("jarvis.server")
-
-# Orígenes de navegador autorizados (la UI de JARVIS y el modo desarrollo).
-ALLOWED_ORIGINS = frozenset({
-    "http://127.0.0.1:7341",
-    "http://localhost:7341",
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
-})
 
 
 def _silence_proactor_reset(loop: asyncio.AbstractEventLoop, context: dict) -> None:
@@ -133,24 +126,21 @@ def create_app(
         await orchestrator.brain.aclose()
 
     app = FastAPI(title="JARVIS", version="0.2.0", lifespan=lifespan)
-    # SEGURIDAD: solo la propia app (backend servido en 127.0.0.1) y el servidor
-    # de desarrollo de Vite pueden llamar a la API desde un navegador.
+    # Only pages served from loopback may call the API from a browser.
+    # See origins.py for why CORS alone is not sufficient.
+    @app.middleware("http")
+    async def _reject_foreign_origins(request, call_next):
+        if not is_allowed_origin(request.headers.get("origin")):
+            return JSONResponse({"error": "origin not allowed"}, status_code=403)
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=list(ALLOWED_ORIGINS),
+        allow_origin_regex=LOOPBACK_ORIGIN_REGEX,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # SEGURIDAD: CORS no frena peticiones "simples" (p. ej. un formulario POST
-    # desde otra web). Se rechaza cualquier petición HTTP con un Origin ajeno.
-    @app.middleware("http")
-    async def _block_foreign_origins(request, call_next):
-        origin = request.headers.get("origin")
-        if origin is not None and origin not in ALLOWED_ORIGINS:
-            return JSONResponse({"error": "origin not allowed"}, status_code=403)
-        return await call_next(request)
 
     # Stash services on app.state so routes/ws can read them
     app.state.cfg = cfg

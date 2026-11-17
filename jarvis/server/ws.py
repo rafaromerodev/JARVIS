@@ -22,6 +22,7 @@ from starlette.websockets import WebSocketState
 
 from ..core.events import Event, EventKind
 from ..core.orchestrator import UNINTERRUPTIBLE_TOOLS
+from .origins import is_allowed_origin
 
 log = logging.getLogger("jarvis.ws")
 
@@ -44,13 +45,11 @@ HELP_TEXT = (
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:
-    # SEGURIDAD: un navegador siempre envía la cabecera Origin en el handshake.
-    # Si viene de una web que no es la propia UI de JARVIS, se rechaza; así
-    # una página maliciosa no puede enviar órdenes a ws://127.0.0.1:7341/ws.
-    from .app import ALLOWED_ORIGINS
+    # Browsers always send Origin on the handshake. Reject pages from other
+    # sites so they can't open ws://127.0.0.1:<port>/ws and issue commands.
     origin = ws.headers.get("origin")
-    if origin is not None and origin not in ALLOWED_ORIGINS:
-        log.warning("ws rechazado: origen no autorizado %s", origin)
+    if not is_allowed_origin(origin):
+        log.warning("ws rejected: origin not allowed: %s", origin)
         await ws.close(code=1008)
         return
     # Guard accept — if the browser dropped before the handshake finished,
