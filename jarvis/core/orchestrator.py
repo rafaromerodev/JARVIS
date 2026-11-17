@@ -654,6 +654,8 @@ class Orchestrator:
                                 "name": tc.name,
                                 "arguments": json.dumps(tc.args, ensure_ascii=False),
                             },
+                            # Gemini 3: reenviar la thought_signature recibida.
+                            **({"extra_content": tc.extra} if tc.extra else {}),
                         }
                         for tc in reply.tool_calls if tc.call_id
                     ],
@@ -730,7 +732,7 @@ class Orchestrator:
             }.get(tc.name)
             if fallback and self.registry.get(fallback):
                 log.warning("intent tool '%s' missing, falling back to '%s'", tc.name, fallback)
-                tc = ToolCall(fallback, tc.args, tc.raw, tc.call_id)
+                tc = ToolCall(fallback, tc.args, tc.raw, tc.call_id, tc.extra)
 
         result_text = ""
         async for ev in self._invoke_tool(tc):
