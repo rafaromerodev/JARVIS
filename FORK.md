@@ -6,11 +6,11 @@ This is a fork of [Dix01/JARVIS](https://github.com/Dix01/JARVIS) (MIT). The ori
 
 JARVIS runs an HTTP + WebSocket server on `127.0.0.1:7341` that can run tools on the machine. Upstream allowed CORS from `*`, so any website open in the same browser could make "simple" requests (a form POST, for example) or open the WebSocket and send commands.
 
-- CORS restricted to the app's own origins (`127.0.0.1:7341` and the Vite dev server).
+- CORS restricted to loopback origins (`127.0.0.1`, `localhost`, `[::1]`) on any port, so a custom `--port` keeps working.
 - An HTTP middleware rejects any request whose `Origin` header is foreign. CORS alone doesn't stop simple requests.
 - The WebSocket handshake rejects foreign origins with close code `1008`.
 
-Files: `jarvis/server/app.py`, `jarvis/server/ws.py`
+Files: `jarvis/server/origins.py`, `jarvis/server/app.py`, `jarvis/server/ws.py` · Tests: `tests/test_origins.py`
 
 ## Fix: Gemini 3 compatibility through the OpenAI-compatible endpoint
 
