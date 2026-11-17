@@ -206,7 +206,7 @@ function rebuildTrayMenu() {
     },
     { type: "separator" },
     {
-      label: "Toggle visibility (Ctrl+Shift+Space)",
+      label: "Mostrar/ocultar (F2)",
       click: () => toggleVisibility(),
     },
     { type: "separator" },
@@ -338,8 +338,11 @@ function createWindow() {
     },
   });
 
+  // --hidden: arranque con Windows. JARVIS se queda en la bandeja del sistema
+  // (escuchando la palabra de activación) hasta que pulses F2.
+  const startHidden = process.argv.includes("--hidden");
   mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+    if (!startHidden) mainWindow.show();
     broadcastMode();
   });
 
@@ -421,9 +424,12 @@ function installIpc() {
 // ── global shortcuts ─────────────────────────────────────────────────────
 
 function installShortcuts() {
-  const accel = "CommandOrControl+Shift+Space";
-  const ok = globalShortcut.register(accel, toggleVisibility);
-  if (!ok) console.warn("[electron] failed to register", accel);
+  // Tecla principal: F2 (mostrar/ocultar JARVIS).
+  // Ctrl+Shift+Espacio se mantiene como alternativa.
+  for (const accel of ["F2", "CommandOrControl+Shift+Space"]) {
+    const ok = globalShortcut.register(accel, toggleVisibility);
+    if (!ok) console.warn("[electron] failed to register", accel);
+  }
   // Secondary: dedicated widget toggle.
   globalShortcut.register("CommandOrControl+Shift+J", () => {
     applyMode(currentMode === MODE.WIDGET ? MODE.FULL : MODE.WIDGET);
