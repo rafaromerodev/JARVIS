@@ -1,3 +1,5 @@
+> **Fork notice.** This is a fork of [Dix01/JARVIS](https://github.com/Dix01/JARVIS). See [FORK.md](FORK.md) for the changes made here (local API origin checks, Gemini 3 compatibility, voice and Spanish localization).
+
 <div align="center">
 
 # J.A.R.V.I.S.
