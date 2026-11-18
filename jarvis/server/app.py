@@ -32,7 +32,7 @@ from ..core.memory import Memory
 from ..core.orchestrator import Orchestrator
 from ..plugins.registry import PluginRegistry
 from . import routes, ws
-from .origins import LOOPBACK_ORIGIN_REGEX, is_allowed_origin
+from .origins import LOOPBACK_ORIGIN_REGEX, is_allowed_host, is_allowed_origin
 
 log = logging.getLogger("jarvis.server")
 
@@ -130,6 +130,8 @@ def create_app(
     # See origins.py for why CORS alone is not sufficient.
     @app.middleware("http")
     async def _reject_foreign_origins(request, call_next):
+        if not is_allowed_host(request.headers.get("host")):
+            return JSONResponse({"error": "host not allowed"}, status_code=403)
         if not is_allowed_origin(request.headers.get("origin")):
             return JSONResponse({"error": "origin not allowed"}, status_code=403)
         return await call_next(request)
