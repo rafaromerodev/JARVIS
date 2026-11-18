@@ -9,6 +9,7 @@ JARVIS runs an HTTP + WebSocket server on `127.0.0.1:7341` that can run tools on
 - CORS restricted to loopback origins (`127.0.0.1`, `localhost`, `[::1]`) on any port, so a custom `--port` keeps working.
 - An HTTP middleware rejects any request whose `Origin` header is foreign. CORS alone doesn't stop simple requests.
 - The WebSocket handshake rejects foreign origins with close code `1008`.
+- Requests and handshakes whose `Host` is not a loopback name are rejected, which blocks DNS rebinding (a public domain re-resolving to 127.0.0.1 would otherwise be same-origin and able to read GET responses).
 
 Files: `jarvis/server/origins.py`, `jarvis/server/app.py`, `jarvis/server/ws.py` · Tests: `tests/test_origins.py`
 
